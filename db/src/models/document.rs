@@ -16,3 +16,16 @@ pub struct Document<T> {
     #[serde_as(as = "TimestampMilliSeconds")]
     pub updated_at: DateTime<Utc>,
 }
+
+impl<T: Serialize + Clone> Document<T> {
+    pub fn new(id: &str, contents: T, properties: HashMap<String, String>) -> Self {
+        Document {
+            _id: id.to_string(),
+            contents,
+            properties,
+            embedding: vec![],
+            created_at: Default::default(),
+            updated_at: Default::default(),
+        }
+    }
+}

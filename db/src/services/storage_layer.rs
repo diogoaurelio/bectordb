@@ -1,67 +1,82 @@
 use std::collections::HashMap;
 use async_trait::async_trait;
-use uuid::Uuid;
-use chrono::Utc;
 use serde::Serialize;
 use crate::models::document::Document;
 use crate::models::storage::Object;
 
 #[async_trait]
 pub trait StorageLayer<T>: Send + Sync  {
-    async fn save(&mut self, document: Document<T>) -> Result<Object, Box<dyn std::error::Error>>;
-    async fn get(&self, object: Object) -> Result<Object, Box<dyn std::error::Error>>;
-    async fn list(&self, location: String) -> Result<Vec<Object>, Box<dyn std::error::Error>>;
-    async fn delete(&mut self, object: Object) -> Result<(), Box<dyn std::error::Error>>;
+    // if a document already existed in the same location with the same id, returns the old document
+    // that has been overwritten
+    async fn save(&mut self, document: Document<T>, location: &str) -> Result<Option<Document<T>>, Box<dyn std::error::Error>>;
+    async fn get(&self, id: &str, location: &str) -> Result<Option<Document<T>>, Box<dyn std::error::Error>>;
+    async fn list(&self, location: &str) -> Result<Vec<Document<T>>, Box<dyn std::error::Error>>;
+    async fn delete(&mut self, id: &str, location: &str) -> Result<Document<T>, Box<dyn std::error::Error>>;
 }
 
-// A storage layer meant for testing/development purposes only
-pub(crate) struct LocalStorageLayer<T> {
-    pub doc_store: HashMap<String, Document<T>>,
-    pub object_store: HashMap<String, Object>,
-    pub location: String,
+// A storage layer meant for testing/development purposes only simulating object storage (e.g. s3)
+pub(crate) struct InMemoryStorageLayer<T> {
+    pub doc_store: HashMap<String, HashMap<String, Document<T>>>,
 }
 
-impl<T: Serialize + Clone + Send + Sync> LocalStorageLayer<T> {
-    pub fn new(location: &str) -> Self {
-        LocalStorageLayer {
+impl<T: Serialize + Clone + Send + Sync> InMemoryStorageLayer<T> {
+    pub fn new() -> Self {
+        InMemoryStorageLayer {
             doc_store: HashMap::new(),
-            object_store: HashMap::new(),
-            location: location.to_string(),
         }
     }
 }
 
-impl<T: Serialize + Clone + Send + Sync> StorageLayer<T> for LocalStorageLayer<T> {
+impl<T: Serialize + Clone + Send + Sync> StorageLayer<T> for InMemoryStorageLayer<T> {
 
-    async fn save(&mut self, document: Document<T>) -> Result<Object, Box<dyn std::error::Error>> {
+    async fn save(&mut self, document: Document<T>, location: &str) -> Result<Option<Document<T>>, Box<dyn std::error::Error>> {
         let doc_id = document._id.clone();
-        let doc_contents: Vec<u8> = document.contents.as_bytes().to_vec();
-        let updated_at = Utc::now().to_string();
-        if self.doc_store.contains_key(&doc_id) && self.object_store.contains_key(&doc_id) {
-            let previous_object = self.object_store.get(&doc_id).unwrap();
-            let object = Object::new(&previous_object.key, &self.location, &previous_object.created_at, &updated_at, doc_contents);
-            self.object_store.insert(doc_id.as_str(), object.clone());
-            self.doc_store.insert(doc_id.clone(), document);
-            Ok(object)
+        if !self.doc_store.contains_key(location) {
+            self.doc_store.insert(location.to_string(), HashMap::new());
+        }
+        let mut store = self.doc_store.get(location).unwrap();
+
+        if store.contains_key(&doc_id) {
+            let previous_doc = store.get(&doc_id).unwrap().clone();
+            store.insert(doc_id, document);
+            Ok(Some(previous_doc))
         } else {
-            let object_key = Uuid::default();
-            let object = Object::new(&object_key.to_string(), &self.location, &updated_at, &updated_at, doc_contents);
-            self.doc_store.insert(doc_id.clone(), document);
-            self.object_store.insert(doc_id, object.clone());
-            Ok(object)
+            store.insert(doc_id.clone(), document);
+            Ok(None)
         }
     }
 
-    async fn get(&self, object: Object) -> Result<Object, Box<dyn std::error::Error>> {
-        todo!()
+    async fn get(&self, id: &str, location: &str) -> Result<Option<Document<T>>, Box<dyn std::error::Error>> {
+        if self.doc_store.contains_key(location) {
+            let store = self.doc_store.get(location).unwrap();
+            match store.get(id) {
+                Some(doc) => Ok(Some(doc.clone())),
+                None => Ok(None)
+            }
+        } else {
+           Ok(None)
+        }
     }
 
-    async fn list(&self, location: String) -> Result<Vec<Object>, Box<dyn std::error::Error>> {
-        todo!()
+    async fn list(&self, location: &str) -> Result<Vec<Object>, Box<dyn std::error::Error>> {
+        if !self.doc_store.contains_key(location) {
+            return Ok(Vec::new())
+        }
+        let store = self.doc_store.get(location).unwrap();
+        Ok(store.values().collect())
     }
 
-    async fn delete(&mut self, object: Object) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
+    async fn delete(&mut self, id: &str, location: &str) -> Result<Document<T>, Box<dyn std::error::Error>> {
+        if !self.doc_store.contains_key(location) {
+            return Err(format!("location {location} not found").into())
+        }
+        let mut store = self.doc_store.get(location).unwrap();
+        if !store.contains_key(id) {
+            return Err(format!("location {location} does not contain document with id {id}").into())
+        }
+        let doc = store.get(id).unwrap().clone();
+        store.remove(id);
+        Ok(doc)
     }
+
 }
-

@@ -111,11 +111,11 @@ impl<T: Serialize + Clone> BectorDB<T> {
 mod tests {
     use std::error::Error;
     use crate::models::storage::Object;
-    use crate::services::storage_layer::LocalStorageLayer;
+    use crate::services::storage_layer::InMemoryStorageLayer;
     use super::*;
 
-    fn get_sut(location: &str) -> BectorDB<String> {
-        let storage: LocalStorageLayer<String> = LocalStorageLayer::new(location);
+    fn get_sut() -> BectorDB<String> {
+        let storage: InMemoryStorageLayer<String> = InMemoryStorageLayer::new();
         BectorDB::new(Box::new(storage))
     }
 
