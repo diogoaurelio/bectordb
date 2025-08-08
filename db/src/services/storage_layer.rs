@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde::Serialize;
 use crate::models::document::Document;
-use crate::models::storage::Object;
 
 #[async_trait]
 pub trait StorageLayer<T>: Send + Sync  {
@@ -41,7 +40,7 @@ where
         if !self.doc_store.contains_key(location) {
             self.doc_store.insert(location.to_string(), HashMap::new());
         }
-        let mut store = self.doc_store.get(location).unwrap();
+        let mut store = self.doc_store.get_mut(location).unwrap();
 
         if store.contains_key(&doc_id) {
             let previous_doc = store.get(&doc_id).unwrap().clone();
@@ -77,13 +76,136 @@ where
         if !self.doc_store.contains_key(location) {
             return Err(format!("location {location} not found").into())
         }
-        let mut store = self.doc_store.get(location).unwrap();
+        let mut store = self.doc_store.get_mut(location).unwrap();
         if !store.contains_key(id) {
             return Err(format!("location {location} does not contain document with id {id}").into())
         }
         let doc = store.get(id).unwrap().clone();
         store.remove(id);
         Ok(doc)
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use crate::models::document::Document;
+    use crate::services::storage_layer::{InMemoryStorageLayer, StorageLayer};
+
+    #[tokio::test]
+    async fn get_method_should_return_a_document() {
+        // given: a document w string type contents
+        let id = "some-id";
+        let contents = "some content".to_string();
+        let properties: HashMap<String, String> = HashMap::new();
+        let doc: Document<String> = Document::new(id, contents, properties);
+
+        // given: a System Under Test (SUT) initialized with a map with an item already loaded
+        let mut store = HashMap::new();
+        let location = "some-location";
+        store.insert(id.to_string(), doc.clone());
+        let mut doc_store = HashMap::new();
+        doc_store.insert(location.to_string(), store);
+
+        let sut = InMemoryStorageLayer { doc_store };
+
+        // when: method get from SUT is called
+        let res = sut.get(id, location).await;
+
+        // then: results should be as expected
+        assert!(res.is_ok(), "it should successfully return ok result");
+        let res = res.unwrap();
+        assert!(res.is_some(), "a document should have been found");
+        let res = res.unwrap();
+        assert_eq!(doc._id, res._id, "it should have the same document id");
+        assert_eq!(doc.contents, res.contents, "it should have the same document contents");
+
+    }
+
+    #[tokio::test]
+    async fn save_method_should_not_return_a_document() {
+        // given: a document w string type contents
+        let id = "some-id";
+        let contents = "some content".to_string();
+        let properties: HashMap<String, String> = HashMap::new();
+        let doc: Document<String> = Document::new(id, contents, properties);
+        let location = "some-location";
+
+        // given: a System Under Test (SUT) initialized with empty a map
+        let mut sut = InMemoryStorageLayer::new();
+
+        // when: method save from SUT is called
+        let res = sut.save(doc, location).await;
+
+        // then: results should be as expected
+        assert!(res.is_ok(), "it should successfully return ok result");
+        let res = res.unwrap();
+        assert!(res.is_none(), "no document should have been found there previously");
+
+    }
+
+    #[tokio::test]
+    async fn save_method_should_return_previously_existing_document() {
+        // given: a document w string type contents
+        let id = "some-id";
+        let contents = "some content".to_string();
+        let properties: HashMap<String, String> = HashMap::new();
+        let previous_doc: Document<String> = Document::new(id, contents, properties.clone());
+
+        // given: a System Under Test (SUT) initialized with a map with an item already loaded
+        let mut store = HashMap::new();
+        let location = "some-location";
+        store.insert(id.to_string(), previous_doc.clone());
+        let mut doc_store = HashMap::new();
+        doc_store.insert(location.to_string(), store);
+
+        let mut sut = InMemoryStorageLayer { doc_store };
+
+
+        // when: method save from SUT is called with a new document
+        let new_contents = "new-contents".to_string();
+        let new_doc: Document<String> = Document::new(id, new_contents, properties);
+        let res = sut.save(previous_doc.clone(), location).await;
+
+        // then: results should be as expected
+        assert!(res.is_ok(), "it should successfully return ok result");
+        let res = res.unwrap();
+        assert!(res.is_some(), "the document previously saved with the same id should be returned");
+        let res = res.unwrap();
+        assert_eq!(previous_doc._id, res._id, "it should have the same document id");
+        assert_eq!(previous_doc.contents, res.contents, "it should have the same document contents as the previously present document");
+
+    }
+
+    #[tokio::test]
+    async fn delete_method_should_return_previously_existing_document() {
+        // given: a document w string type contents
+        let id = "some-id";
+        let contents = "some content".to_string();
+        let properties: HashMap<String, String> = HashMap::new();
+        let previous_doc: Document<String> = Document::new(id, contents, properties.clone());
+
+        // given: a System Under Test (SUT) initialized with a map with an item already loaded
+        let mut store = HashMap::new();
+        let location = "some-location";
+        store.insert(id.to_string(), previous_doc.clone());
+        let mut doc_store = HashMap::new();
+        doc_store.insert(location.to_string(), store);
+
+        let mut sut = InMemoryStorageLayer { doc_store };
+
+        // when: method delete from SUT is called with a new document
+        let new_contents = "new-contents".to_string();
+        let new_doc: Document<String> = Document::new(id, new_contents, properties);
+        let res = sut.delete(id, location).await;
+
+        // then: results should be as expected
+        assert!(res.is_ok(), "it should successfully return ok result");
+        let res = res.unwrap();
+        assert_eq!(previous_doc._id, res._id, "it should have the same document id");
+        assert_eq!(previous_doc.contents, res.contents, "it should have the same document contents as the previously present document");
+
     }
 
 }

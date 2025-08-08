@@ -9,3 +9,4 @@ async-trait = "0.1.88"
 serde = { version = "1.0.219", features = ["derive"] }
 log = "0.4.27"
 chrono = { version = "0.4.41", features = ["serde"] }
+tokio = { version = "1.46.1", features = ["macros", "rt-multi-thread"] }

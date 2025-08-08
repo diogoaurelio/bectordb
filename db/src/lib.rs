@@ -14,7 +14,7 @@ pub fn add(left: u64, right: u64) -> u64 {
 }
 
 struct BectorDB<T> {
-    storage: Arc<Mutex<dyn StorageLayer<T>>>,
+    storage: Arc<Mutex<Box<dyn StorageLayer<T>>>>,
     index: Arc<RwLock<HashMap<String, Document<T>>>>,
 }
 
