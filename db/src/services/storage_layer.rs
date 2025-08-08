@@ -19,7 +19,10 @@ pub(crate) struct InMemoryStorageLayer<T> {
     pub doc_store: HashMap<String, HashMap<String, Document<T>>>,
 }
 
-impl<T: Serialize + Clone + Send + Sync> InMemoryStorageLayer<T> {
+impl<T> InMemoryStorageLayer<T>
+where
+    T: Serialize + Clone + Send + Sync,
+{
     pub fn new() -> Self {
         InMemoryStorageLayer {
             doc_store: HashMap::new(),
@@ -27,7 +30,11 @@ impl<T: Serialize + Clone + Send + Sync> InMemoryStorageLayer<T> {
     }
 }
 
-impl<T: Serialize + Clone + Send + Sync> StorageLayer<T> for InMemoryStorageLayer<T> {
+#[async_trait]
+impl<T> StorageLayer<T> for InMemoryStorageLayer<T>
+where
+    T: Serialize + Clone + Send + Sync,
+{
 
     async fn save(&mut self, document: Document<T>, location: &str) -> Result<Option<Document<T>>, Box<dyn std::error::Error>> {
         let doc_id = document._id.clone();
@@ -58,12 +65,12 @@ impl<T: Serialize + Clone + Send + Sync> StorageLayer<T> for InMemoryStorageLaye
         }
     }
 
-    async fn list(&self, location: &str) -> Result<Vec<Object>, Box<dyn std::error::Error>> {
+    async fn list(&self, location: &str) -> Result<Vec<Document<T>>, Box<dyn std::error::Error>> {
         if !self.doc_store.contains_key(location) {
             return Ok(Vec::new())
         }
         let store = self.doc_store.get(location).unwrap();
-        Ok(store.values().collect())
+        Ok(store.values().cloned().collect())
     }
 
     async fn delete(&mut self, id: &str, location: &str) -> Result<Document<T>, Box<dyn std::error::Error>> {
